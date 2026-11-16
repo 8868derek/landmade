@@ -1,0 +1,18 @@
+// Run with a JS harness that supplies the current app.js as `source`.
+const init=source.slice(source.indexOf('function initHero(){'),source.indexOf('\nfunction showHome()'));
+function fixture(types,reduced=false){
+ let serial=0;const timers=new Map(),events={},panels=[],dots=[];
+ const classes=()=>({items:new Set(),add(v){this.items.add(v)},remove(v){this.items.delete(v)},toggle(v,on){on?this.add(v):this.remove(v)}});
+ for(const type of types){const listeners={};const asset=type==='video'?{tagName:'VIDEO',loop:true,paused:true,ended:false,currentTime:8,pause(){this.paused=true},play(){this.paused=false;return Promise.resolve()},removeAttribute(){},addEventListener(k,f){listeners[k]=f},removeEventListener(k){delete listeners[k]},emit(k){listeners[k]?.()}}:{tagName:'IMG',complete:true,naturalWidth:type==='broken'?0:100};const panel={classList:classes(),setAttribute(){},querySelector(q){return q==='video'?(type==='video'?asset:null):asset}};panels.push(panel);dots.push({dataset:{slide:String(dots.length)},classList:classes(),setAttribute(){}})}
+ panels[0].classList.add('is-active');const counter={textContent:''};const hero={querySelectorAll:q=>q==='[data-panel]'?panels:dots,querySelector:q=>q==='.counter'?counter:null};const doc={hidden:false,querySelector:()=>hero,addEventListener(k,f){events[k]=f},removeEventListener(k){delete events[k]}};
+ const run=new Function('document','matchMedia','setTimeout','clearTimeout','setPanelInteractive','notice',`let heroTimer,heroCleanup;${init};initHero();return {cleanup:()=>heroCleanup()}`);
+ const instance=run(doc,()=>({matches:reduced}), (f,ms)=>{const id=++serial;timers.set(id,{f,ms});return id},id=>timers.delete(id),()=>{},()=>{});
+ const flush=async()=>{for(let n=0;n<15;n++)await Promise.resolve()};
+ return {panels,dots,doc,events,timers,counter,flush,cleanup:instance.cleanup,active:()=>panels.findIndex(p=>p.classList.items.has('is-active')),async tick(ms){const entry=[...timers].find(([,t])=>t.ms===ms);if(!entry)throw Error('Missing timer '+ms);timers.delete(entry[0]);entry[1].f();await flush()},video:i=>panels[i].querySelector('video')};
+}
+const assert=(ok,label)=>{if(!ok)throw Error(label)};
+const f=fixture(['image','video','image']);await f.tick(7000);assert(f.active()===1,'image advances to video');await f.tick(950);assert(!f.video(1).loop&&!f.video(1).paused&&f.video(1).currentTime===0,'video plays once from start');f.video(1).emit('timeupdate');assert([...f.timers.values()].some(t=>t.ms===10000),'stalled video watchdog');f.video(1).emit('ended');await f.flush();assert(f.active()===2&&f.video(1).paused,'video end advances to next image');await f.tick(950);await f.tick(7000);assert(f.active()===0,'last slide wraps to first');await f.tick(950);f.doc.hidden=true;f.events.visibilitychange();assert(f.timers.size===0,'hidden page pauses rotation');f.doc.hidden=false;f.events.visibilitychange();assert(f.timers.size===1,'visible page resumes');f.cleanup();assert(f.timers.size===0,'route change cleans timers');
+const r=fixture(['image','image'],true);await r.tick(7000);assert(r.active()===1,'reduced motion retains slide rotation without animation');r.cleanup();
+const b=fixture(['image','broken','image']);await b.tick(7000);assert(b.active()===2,'broken image skipped');b.cleanup();
+const v=fixture(['video','image']);assert(!v.video(0).loop&&!v.video(0).paused,'initial video activated without loop');await v.tick(10000);assert(v.active()===1,'stalled video does not block rotation');v.cleanup();
+return 'PASS: image/video rotation, ended, wraparound, watchdog, visibility, cleanup, reduced motion, unavailable media.';

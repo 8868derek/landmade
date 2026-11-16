@@ -1,0 +1,22 @@
+{
+  "snapshotAt": "2026-11-16T13:32:51.307362+08:00",
+  "products": 23,
+  "publishedProducts": 23,
+  "categories": 5,
+  "uploadedFiles": 313,
+  "uploadedBytes": 772241607,
+  "optimizedImages": 308,
+  "referencedMediaVerified": 219,
+  "databaseIntegrity": "ok",
+  "credentialsIncluded": false,
+  "machineDependenciesIncluded": false,
+  "excluded": [
+    "data/auth.json",
+    "data/sharing.json",
+    "image_tools/",
+    "old snapshots",
+    "debug screenshots"
+  ],
+  "productionReady": false,
+  "readFirst": "上线交接说明.md"
+}
