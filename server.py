@@ -58,6 +58,35 @@ def allowed_peer(address,lan_enabled=False):
  except ValueError:return False
  return ip.is_loopback or (lan_enabled and any(ip in network for network in PRIVATE_NETWORKS))
 
+def public_mode():
+ return os.environ.get('DEPLOYMENT','').strip().lower()=='public'
+
+def configure_data_dir():
+ """Point runtime data at a persistent directory and seed it once from the image."""
+ global DATA,UP,DB,AUTH_FILE
+ configured=os.environ.get('DATA_DIR','').strip()
+ if not configured:return
+ target=Path(configured);seed=ROOT/'data';target.mkdir(parents=True,exist_ok=True)
+ if target.resolve()==seed.resolve():return
+ if not (target/'catalog.sqlite3').exists() and (seed/'catalog.sqlite3').exists():
+  print('正在把现有网站数据复制到持久目录 '+str(target)+' …',flush=True)
+  for child in seed.iterdir():
+   dest=target/child.name
+   if dest.exists():continue
+   if child.is_dir():shutil.copytree(child,dest)
+   else:shutil.copy2(child,dest)
+  print('数据复制完成。之后的修改只写在持久目录，重新部署不会覆盖。',flush=True)
+ DATA,UP,DB,AUTH_FILE=target,target/'uploads',target/'catalog.sqlite3',target/'auth.json'
+
+def ensure_admin():
+ if AUTH_FILE.exists():return
+ from initialize_admin import initialize
+ password=os.environ.get('ADMIN_PASSWORD','');answer=os.environ.get('ADMIN_ANSWER','')
+ if not password or not answer:
+  raise SystemExit('公网部署还没有后台密码。请在 Zeabur 设置 ADMIN_PASSWORD 和 ADMIN_ANSWER 后重新部署。')
+ initialize(AUTH_FILE,password,answer)
+ print('已创建后台密码。登录确认后，请从 Zeabur 删除 ADMIN_PASSWORD 和 ADMIN_ANSWER。',flush=True)
+
 def update_network_access(http,networks):
  http.allowed_hosts={'127.0.0.1','localhost'}|{address for address,_ in networks}
  http.lan_urls=['http://'+address+':'+str(http.server_port) for address,_ in networks]
@@ -224,13 +253,42 @@ def restore_backup(source):
   save_state(state)
 
 class Handler(BaseHTTPRequestHandler):
+ def parsed_host(self):
+  try:url=urlparse('http://'+self.headers.get('Host',''))
+  except ValueError:return None
+  if url.username or url.password or url.path or url.query or url.fragment or not url.hostname:return None
+  return url
  def valid_host(self):
+  if getattr(self.server,'public',False):return self.public_host_ok()
   hosts=getattr(self.server,'allowed_hosts',{'127.0.0.1','localhost'})
-  try:
-   url=urlparse('http://'+self.headers.get('Host',''))
-   return url.hostname in hosts and url.port==self.server.server_port and not url.username and not url.password and not url.path and not url.query and not url.fragment
-  except ValueError:return False
+  url=self.parsed_host()
+  return bool(url) and url.hostname in hosts and url.port==self.server.server_port
+ def public_host_ok(self):
+  url=self.parsed_host()
+  if not url or url.port not in (None,443,self.server.server_port):return False
+  host=url.hostname.lower().rstrip('.')
+  if host in ('127.0.0.1','localhost') or host.endswith('.zeabur.app'):return True
+  return host in getattr(self.server,'extra_hosts',())
+ def request_scheme(self):
+  if not getattr(self.server,'public',False):return 'http'
+  proto=self.headers.get('X-Forwarded-Proto','').split(',')[0].strip().lower()
+  if proto in ('https','http'):return proto
+  url=self.parsed_host()
+  if url and url.hostname.lower().rstrip('.').endswith('.zeabur.app'):return 'https'
+  return 'http'
+ def origin_ok(self):
+  origin=self.headers.get('Origin')
+  if not origin:return True
+  if not getattr(self.server,'public',False):return origin=='http://'+self.headers.get('Host','')
+  url=self.parsed_host()
+  return bool(url) and origin==self.request_scheme()+'://'+url.hostname.lower().rstrip('.')
+ def session_cookie(self,token='',clear=False):
+  parts=['landmade_session='+token,'HttpOnly','SameSite=Strict','Path=/']
+  if clear:parts.append('Max-Age=0')
+  if getattr(self.server,'public',False) and self.request_scheme()=='https':parts.append('Secure')
+  return '; '.join(parts)
  def valid_client(self):
+  if getattr(self.server,'public',False):return True
   return allowed_peer(self.client_address[0],getattr(self.server,'lan_enabled',False))
  def deny_access(self):
   if not self.valid_client():
@@ -329,8 +387,7 @@ class Handler(BaseHTTPRequestHandler):
      self.wfile.write(chunk);remaining-=len(chunk)
   except (BrokenPipeError,ConnectionResetError):pass
  def do_POST(self):
-  host=self.headers.get('Host','');origin=self.headers.get('Origin')
-  if not self.valid_host() or not self.valid_client() or self.headers.get('X-Landmade')!='local' or (origin and origin!='http://'+host):return self.respond(403,{'error':'请求来源不正确'})
+  if not self.valid_host() or not self.valid_client() or self.headers.get('X-Landmade')!='local' or not self.origin_ok():return self.respond(403,{'error':'请求来源不正确'})
   path=urlparse(self.path).path
   if path not in ('/api/auth/login','/api/auth/logout') and not self.logged_in():return self.respond(401,{'error':'请先登录管理后台，或登录已过期；重新登录后再保存'})
   try:
@@ -352,10 +409,10 @@ class Handler(BaseHTTPRequestHandler):
     if not isinstance(body,dict) or not password_ok(body.get('password')):return self.respond(401,{'error':'密码不正确，请重试'})
     token=secrets.token_urlsafe(32)
     with AUTH_LOCK:SESSIONS[token]=time.monotonic()+SESSION_SECONDS
-    return self.respond(200,{'ok':True},extra={'Set-Cookie':'landmade_session='+token+'; HttpOnly; SameSite=Strict; Path=/'})
+    return self.respond(200,{'ok':True},extra={'Set-Cookie':self.session_cookie(token)})
    if path=='/api/auth/logout':
     with AUTH_LOCK:SESSIONS.pop(self.session_token(),None);PASSWORD_GRANTS.pop(self.session_token(),None)
-    return self.respond(200,{'ok':True},extra={'Set-Cookie':'landmade_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'})
+    return self.respond(200,{'ok':True},extra={'Set-Cookie':self.session_cookie(clear=True)})
    if path=='/api/auth/password/verify':
     config=json.loads(AUTH_FILE.read_text());token=self.session_token()
     if not secret_matches(body.get('answer'),config.get('verification')):
@@ -373,7 +430,7 @@ class Handler(BaseHTTPRequestHandler):
      if token not in SESSIONS or PASSWORD_GRANTS.get(token,0)<=time.monotonic():return self.respond(403,{'error':'验证已过期，请重新验证'})
      config=json.loads(AUTH_FILE.read_text());config.update(secret_record(new_password));write_auth(config)
      SESSIONS.clear();PASSWORD_GRANTS.clear()
-    return self.respond(200,{'ok':True},extra={'Set-Cookie':'landmade_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'})
+    return self.respond(200,{'ok':True},extra={'Set-Cookie':self.session_cookie(clear=True)})
    if path=='/api/state':
     revision=save_state(body,require_revision=True)
     return self.respond(200,{'ok':True,'revision':revision,'state':client_state(True)})
@@ -400,11 +457,16 @@ class Handler(BaseHTTPRequestHandler):
    print('Request failed:',repr(e));self.respond(500,{'error':'保存失败，请检查本地磁盘或稍后重试'})
 if __name__=='__main__':
  p=argparse.ArgumentParser();p.add_argument('--port',type=int,default=8765);p.add_argument('--open',action='store_true');p.add_argument('--lan',action='store_true',help='Share on active private local networks');args=p.parse_args()
+ public=public_mode()
+ if public:
+  configure_data_dir()
+  if os.environ.get('PORT','').strip():args.port=int(os.environ['PORT'])
  UP.mkdir(parents=True,exist_ok=True)
  if not DB.exists():raise SystemExit('缺少数据库，请先运行 prepare_assets.py')
- networks=local_networks() if args.lan else []
- if args.lan and not networks:raise SystemExit('未找到可用的局域网，请先连接公司 Wi-Fi 或有线网络后重试。')
- try:server=ThreadingHTTPServer(('0.0.0.0' if args.lan else '127.0.0.1',args.port),Handler)
+ if public:ensure_admin()
+ networks=[] if public or not args.lan else local_networks()
+ if args.lan and not public and not networks:raise SystemExit('未找到可用的局域网，请先连接公司 Wi-Fi 或有线网络后重试。')
+ try:server=ThreadingHTTPServer(('0.0.0.0' if args.lan or public else '127.0.0.1',args.port),Handler)
  except PermissionError:raise SystemExit('系统未允许启动本地服务。请在终端直接运行启动网站.command。')
  except OSError:
   address='http://127.0.0.1:'+str(args.port)
@@ -418,16 +480,22 @@ if __name__=='__main__':
   print('LANDMADE 已在运行，打开网站：'+address,flush=True)
   if args.open:webbrowser.open(address)
   raise SystemExit(0)
- server.lan_enabled=args.lan;server.optimize_uploads=True;update_network_access(server,networks)
+ server.lan_enabled=args.lan and not public;server.public=public;server.optimize_uploads=True
+ server.extra_hosts=tuple(item.strip().lower().rstrip('.') for item in os.environ.get('ALLOWED_HOSTS','').split(',') if item.strip())
+ update_network_access(server,networks)
  queue_images(UP.iterdir(),DATA)
  network_stop=threading.Event()
- if args.lan:threading.Thread(target=refresh_network_loop,args=(server,network_stop),daemon=True).start()
- print('LANDMADE 本地网站：http://127.0.0.1:'+str(args.port),flush=True)
- print('后台管理：http://127.0.0.1:'+str(args.port)+'/admin',flush=True)
- for address in server.lan_urls:print('同事访问：'+address+'　后台：'+address+'/#/admin/home',flush=True)
- if args.lan:
-  write_share_addresses(server.lan_urls)
- if args.open:threading.Timer(.6,lambda:webbrowser.open('http://127.0.0.1:'+str(args.port))).start()
+ if server.lan_enabled:threading.Thread(target=refresh_network_loop,args=(server,network_stop),daemon=True).start()
+ if public:
+  print('LANDMADE 公网服务：0.0.0.0:'+str(args.port),flush=True)
+  print('数据目录：'+str(DATA),flush=True)
+  print('使用 Zeabur 分配的 *.zeabur.app 域名即可，无需另外配置网址。',flush=True)
+ else:
+  print('LANDMADE 本地网站：http://127.0.0.1:'+str(args.port),flush=True)
+  print('后台管理：http://127.0.0.1:'+str(args.port)+'/admin',flush=True)
+  for address in server.lan_urls:print('同事访问：'+address+'　后台：'+address+'/#/admin/home',flush=True)
+  if args.lan:write_share_addresses(server.lan_urls)
+ if args.open and not public:threading.Timer(.6,lambda:webbrowser.open('http://127.0.0.1:'+str(args.port))).start()
  try:server.serve_forever()
  except KeyboardInterrupt:print('\n网站已停止。')
  finally:network_stop.set();server.server_close()
