@@ -138,7 +138,7 @@ video{max-width:100%}.photo-btn video,.detail-main video{pointer-events:none}.ed
 }
 
 /* Keep public navigation visible while browsing. */
-.site-header,.site-header.overlay{position:fixed;top:0;left:0;right:0;z-index:30}
+.site-header,.site-header.overlay{position:fixed;top:0;left:0;right:0;z-index:40;pointer-events:auto}
 .site-header:not(.overlay)+main{margin-top:76px}
 .nav a span{color:#555}
 @media(max-width:850px){.site-header:not(.overlay)+main{margin-top:67px}}
