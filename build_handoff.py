@@ -34,7 +34,8 @@ def build(output_folder):
     members = {}
     prefix = 'landmade-local/'
     docs = ['上线交接说明.md', '后台操作指南.md', '图片压缩说明.md', '浏览器兼容说明.md']
-    for file in list(ROOT.glob('*.py')) + list(ROOT.glob('check_*.js')) + list(ROOT.glob('requirements*.txt')) + list(ROOT.glob('*.command')) + [ROOT / name for name in docs]:
+    deploy_files = ['Dockerfile', '.dockerignore', '.gitignore']
+    for file in list(ROOT.glob('*.py')) + list(ROOT.glob('check_*.js')) + list(ROOT.glob('requirements*.txt')) + list(ROOT.glob('*.command')) + [ROOT / name for name in docs + deploy_files]:
         if file.is_file():
             members[file.name] = file
     for file in (ROOT / 'static').rglob('*'):
@@ -89,7 +90,7 @@ def build(output_folder):
             'credentialsIncluded': False,
             'machineDependenciesIncluded': False,
             'excluded': ['data/auth.json', 'data/sharing.json', 'image_tools/', 'old snapshots', 'debug screenshots'],
-            'productionReady': False,
+            'dockerfileIncluded': 'Dockerfile' in members,
             'readFirst': '上线交接说明.md',
         }
         handle, temporary = tempfile.mkstemp(prefix='.landmade-package-', suffix='.zip', dir=output_folder)

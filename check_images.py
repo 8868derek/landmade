@@ -21,7 +21,7 @@ with tempfile.TemporaryDirectory(prefix='landmade-images-test-') as temp:
  portrait=Image.new('RGB',(200,100),'red');exif=Image.Exif();exif[274]=6;portrait.save(up/'rotate.jpg',exif=exif)
  _,rotated=image_optimizer.optimize_image(up/'rotate.jpg',data);assert rotated['variants']['display']['width']==100 and rotated['variants']['display']['height']==200
  frames=[Image.new('RGB',(16,16),c) for c in ('red','blue')];frames[0].save(up/'animated.gif',save_all=True,append_images=frames[1:],duration=50,loop=0);assert image_optimizer.optimize_image(up/'animated.gif',data)[1] is None
- catalog={'categories':[{'id':'home','en':'HOME','zh':'家居'}],'products':[{'id':'p','en':'Product','zh':'产品','category':'home','published':True,'created':1,'images':['/uploads/transparent.png'],'cardImage':'/uploads/transparent.png','channelBanner':''}],'settings':{'slides':[]}}
+ catalog={'categories':[{'id':'home','en':'HOME','zh':'家居'}],'products':[{'id':'p','en':'Product','zh':'产品','category':'home','published':True,'created':1,'images':['/uploads/transparent.png'],'cardImage':'/uploads/transparent.png','imageStatuses':{'/uploads/transparent.png':'listed'},'channelBanner':''}],'settings':{'slides':[]}}
  with sqlite3.connect(server.DB) as db:db.execute('CREATE TABLE catalog(id INTEGER PRIMARY KEY,body TEXT NOT NULL)');db.execute('INSERT INTO catalog VALUES(1,?)',(json.dumps(catalog),))
  client=server.client_state(True);assert key in client['mediaVariants'] and '/uploads/rotate.jpg' not in client['mediaVariants']
  revision=client['_revision'];server.save_state(client,require_revision=True);saved=server.read_state();assert 'mediaVariants' not in saved and '_mediaRevision' not in saved

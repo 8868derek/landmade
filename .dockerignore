@@ -1,7 +1,13 @@
 .git
-.DS_Store
 __pycache__
 *.pyc
 image_tools
 .venv
 venv
+.DS_Store
+data/auth.json
+data/sharing.json
+data/.auth-*
+data/before-restore-*.json
+.env
+.env.*
