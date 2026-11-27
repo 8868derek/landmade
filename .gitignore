@@ -4,3 +4,9 @@ __pycache__/
 image_tools/
 .venv/
 venv/
+data/auth.json
+data/sharing.json
+data/.auth-*
+data/before-restore-*.json
+.env
+.env.*

@@ -58,7 +58,7 @@ with tempfile.TemporaryDirectory(prefix='landmade-check-') as tmp:
   original_slides=json.loads(json.dumps(state['settings']['slides']))
   state['settings']['newArrivals']=['integration-test'];assert request('/api/state',state)[0]==200
   assert json.loads(request('/api/state?admin=1')[1])['settings']['newArrivals']==['integration-test']
-  assert json.loads(request('/api/state')[1])['settings']['newArrivals']==['integration-test']
+  assert json.loads(request('/api/state')[1])['settings']['newArrivals'][0]=='integration-test'
   state['settings']['newArrivals']=[];assert request('/api/state',state)[0]==200
   after=json.loads(request('/api/state?admin=1')[1])
   assert after['settings']['newArrivals']==[] and after['products'][-1]['published']
@@ -71,10 +71,13 @@ with tempfile.TemporaryDirectory(prefix='landmade-check-') as tmp:
   assert request('/api/state',state)[0]==200
   ordered=json.loads(request('/api/state?admin=1')[1])
   assert ordered['settings']['homeCollectionOrder']==state['settings']['homeCollectionOrder']
-  assert json.loads(request('/api/state')[1])['settings']['homeCollectionOrder']==state['settings']['homeCollectionOrder']
+  storefront=json.loads(request('/api/state')[1])
+  visible={p['id'] for p in storefront['products']}
+  assert storefront['settings']['homeCollectionOrder']==[pid for pid in state['settings']['homeCollectionOrder'] if pid in visible]
   assert ordered['products']==before_products and ordered['settings']['newArrivals']==before_arrivals
   assert ordered['settings']['slides']==original_slides
   # Removing a channel hero must stay removed after canonical synchronization.
+  guest_slides=json.loads(request('/api/state')[1])['settings']['slides']
   removed_channel=state['categories'][0]
   removed_channel.update(hero='',heroProduct='',heroMode='custom')
   assert request('/api/state',state)[0]==200
@@ -82,7 +85,8 @@ with tempfile.TemporaryDirectory(prefix='landmade-check-') as tmp:
   hero=next(c for c in removed['categories'] if c['id']==removed_channel['id'])
   assert hero['hero']=='' and hero['heroProduct']=='' and hero['heroMode']=='custom'
   assert any(p['id']=='integration-test' for p in removed['products'])
-  assert removed['settings']['slides']==original_slides
+  assert removed['settings']['slides']==guest_slides
+  assert json.loads(request('/api/state?admin=1')[1])['settings']['slides']==original_slides
   first,second=state['categories'][:2]
   first['hidden']=True;assert request('/api/state',state)[0]==200
   public=json.loads(request('/api/state')[1]);assert first['id'] not in [c['id'] for c in public['categories']]

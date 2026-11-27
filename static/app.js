@@ -3,6 +3,7 @@ let state, stateIsAdmin=false, routeVersion=0, heroTimer, heroCleanup, viewProdu
 const app=document.querySelector('#app'), viewer=document.querySelector('#viewer');
 const E=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const clone=x=>JSON.parse(JSON.stringify(x));
+const internalUnlocked=()=>!stateIsAdmin&&state?._internal===true;
 const publicProducts=()=>state.products.filter(p=>p.published).sort((a,b)=>b.created-a.created);
 const productCategories=p=>p.categories?.length?p.categories:[p.category];
 const inCategory=(p,id)=>productCategories(p).includes(id);
@@ -26,12 +27,21 @@ const opt=(value,label,current)=>`<option value="${E(value)}" ${value===current?
 const notice=(msg)=>{const t=document.querySelector('#toast');t.textContent=msg;t.classList.add('show');clearTimeout(notice.timer);notice.timer=setTimeout(()=>t.classList.remove('show'),3200)};
 async function api(path,data){const r=await fetch(path,data===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-Landmade':'local'},body:JSON.stringify(data)});let out;try{out=await r.json()}catch{throw Error('本地服务没有响应，请确认启动窗口仍在运行')}if(!r.ok)throw Object.assign(Error(out.error||'操作失败'),{status:r.status});return out}
 async function save(next){const out=await api('/api/state',next);next._revision=out.revision;state=out.state||next;dirty=false;localStorage.setItem('landmade-catalog-update',Date.now()+'-'+Math.random())}
-function nav(active='__home',overlay=false){return `<header class="site-header ${overlay?'overlay':''}"><a class="brand" href="#/" aria-label="LANDMADE 首页"><img src="/assets/logo.png" alt="蓝箭造办 LANDMADE"></a><nav class="nav" aria-label="产品分类"><a class="${active==='__home'?'active':''}" href="#/" aria-label="INDEX 首页"><span class="nav-en" aria-hidden="true">INDEX</span><span class="nav-zh" aria-hidden="true">首页</span></a>${state.categories.map(c=>`<a class="${c.id===active?'active':''}" href="#/category/${encodeURIComponent(c.id)}" aria-label="${E(c.en)} ${E(c.zh)}"><span class="nav-en" aria-hidden="true">${E(c.en)}</span><span class="nav-zh" aria-hidden="true">${E(c.zh)}</span></a>`).join('')}</nav></header>`}
+function nav(active='__home',overlay=false){return `<header class="site-header ${overlay?'overlay':''}"><a class="brand" href="#/" aria-label="LANDMADE 首页"><img src="/assets/logo.png" alt="蓝箭造办 LANDMADE"></a><nav class="nav" aria-label="产品分类"><a class="${active==='__home'?'active':''}" href="#/" aria-label="INDEX 首页"><span class="nav-en" aria-hidden="true">INDEX</span><span class="nav-zh" aria-hidden="true">首页</span></a>${state.categories.map(c=>`<a class="${c.id===active?'active':''}" href="#/category/${encodeURIComponent(c.id)}" aria-label="${E(c.en)} ${E(c.zh)}"><span class="nav-en" aria-hidden="true">${E(c.en)}</span><span class="nav-zh" aria-hidden="true">${E(c.zh)}</span></a>`).join('')}${internalNav(active)}</nav></header>`}
+function internalNav(active){
+ if(internalUnlocked()){
+  const exit=stageIcon('<path d="M7 2H3v12h4m3-10 4 4-4 4m-4-4h8"/>');
+  return `<button type="button" class="internal-entry is-unlocked" data-internal-exit>${exit}<span class="internal-entry-label">退出内部浏览</span></button>`;
+ }
+ const lock=stageIcon('<rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 0 1 6 0v2m-3 3v1"/>');
+ const current=active==='__internal';
+ return `<a class="internal-entry${current?' is-current':''}" href="#/internal" ${current?'aria-current="page"':''}>${lock}<span class="internal-entry-label">内部浏览</span></a>`;
+}
 function footer(){return `<footer class="site-footer"><a href="#/" aria-label="首页"><img src="/assets/logo.png" alt="LANDMADE"></a><div class="right"><span>Objects for everyday living.</span><a class="admin-link" href="#/admin/products">后台管理 ↗</a></div></footer>`}
 const imageStages={design:{label:'设计完成',icon:'<path d="M3 13l1-4 7-7 3 3-7 7-4 1zM9 4l3 3"/>'},making:{label:'制作中',icon:'<circle cx="8" cy="8" r="6"/><path d="M8 4v4l3 2"/>'},listed:{label:'已上架',icon:'<circle cx="8" cy="8" r="6"/><path d="M5 8l2 2 4-4"/>'}};
 function imageStage(p,src){
  const stage=p.imageStatuses?.[src];
- return Object.prototype.hasOwnProperty.call(imageStages,stage)?stage:(p.published?'listed':'design');
+ return Object.prototype.hasOwnProperty.call(imageStages,stage)?stage:'design';
 }
 function stageIcon(path){
  return `<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
@@ -84,7 +94,8 @@ function initHero(){
 
 function stageFilters(){
  const all={label:'综合',icon:'<rect x="2" y="2" width="4.5" height="4.5" rx=".7"/><rect x="9.5" y="2" width="4.5" height="4.5" rx=".7"/><rect x="2" y="9.5" width="4.5" height="4.5" rx=".7"/><rect x="9.5" y="9.5" width="4.5" height="4.5" rx=".7"/>'};
- const filters=[['all',all],...Object.entries(imageStages)];
+ const stages=Object.entries(imageStages).filter(([key])=>key!=='design'||internalUnlocked());
+ const filters=[['all',all],...stages];
  return `<div class="filters" role="group" aria-label="按作品状态筛选">${filters.map(([key,stage])=>{
   const active=key==='all';
   return `<button type="button" data-stage-filter="${key}" class="${active?'active':''}" aria-pressed="${active}">${stageIcon(stage.icon)}${stage.label}</button>`;
@@ -139,7 +150,7 @@ function openViewer(p,i){returnFocus=document.activeElement;viewProduct=p;viewIn
 function drawViewer(){const p=viewProduct;viewer.innerHTML=`<div class="viewer-top">${E(p.en)}<small>${E(p.zh)}</small><small>${String(viewIndex+1).padStart(2,'0')} / ${String(p.images.length).padStart(2,'0')}</small></div><button class="viewer-close" aria-label="关闭大图">×</button>${media(p.images[viewIndex],`class="viewer-image"  alt="${E(p.zh)}"`,'play')}<button class="viewer-prev" aria-label="上一张">‹</button><button class="viewer-next" aria-label="下一张">›</button><button class="viewer-zoom">放大 +</button><div class="viewer-bottom"><div class="viewer-count">${String(viewIndex+1).padStart(2,'0')} — ${E(p.mediaNames?.[p.images[viewIndex]]||p.zh||p.en)} ${stageBadge(p,p.images[viewIndex])}</div><div class="viewer-thumbs">${p.images.map((s,i)=>`<button class="${i===viewIndex?'active':''}" data-thumb="${i}" aria-label="第 ${i+1} 张">${media(s,`alt=""`,'thumb')}</button>`).join('')}</div><div class="viewer-hint">← → Browse　　Esc Close</div></div>`;viewer.querySelector('.viewer-close').onclick=()=>viewer.close();viewer.querySelector('.viewer-prev').onclick=()=>moveViewer(-1);viewer.querySelector('.viewer-next').onclick=()=>moveViewer(1);viewer.querySelectorAll('[data-thumb]').forEach(b=>b.onclick=()=>{viewIndex=Number(b.dataset.thumb);drawViewer()});viewer.querySelector('.viewer-zoom').onclick=()=>{const im=viewer.querySelector('.viewer-image');im.classList.toggle('zoomed');if(im.tagName==='IMG'){im.removeAttribute('srcset');im.src=im.classList.contains('zoomed')?p.images[viewIndex]:displayImage(p.images[viewIndex])}viewer.querySelector('.viewer-zoom').textContent=im.classList.contains('zoomed')?'适应窗口 −':'放大 +'};if(isVideo(p.images[viewIndex])){viewer.querySelector('.viewer-zoom').hidden=true}else viewer.querySelector('.viewer-image').onclick=()=>viewer.querySelector('.viewer-zoom').click();viewer.querySelector('.viewer-thumbs .active')?.scrollIntoView({block:'nearest',inline:'center'})}
 function moveViewer(n){viewIndex=(viewIndex+n+viewProduct.images.length)%viewProduct.images.length;drawViewer()}
 viewer.addEventListener('close',()=>{viewer.querySelector('video')?.pause();document.body.style.overflow='';returnFocus?.focus()});viewer.addEventListener('keydown',e=>{if(e.target.tagName==='VIDEO')return;if(e.key==='ArrowRight'){e.preventDefault();moveViewer(1)}if(e.key==='ArrowLeft'){e.preventDefault();moveViewer(-1)}});
-function adminShell(tab,body){app.innerHTML=`<div class="admin"><header class="admin-bar"><div style="display:flex;align-items:center"><a href="#/"><img src="/assets/logo.png" alt="LANDMADE"></a><strong>本地管理</strong></div><div style="display:flex;align-items:center;gap:20px"><a class="text-link" href="#/" target="_blank" rel="noopener">查看前台 ↗</a><button class="btn small" id="admin-logout">退出登录</button></div></header><div class="admin-layout"><nav class="sidebar"><a class="${tab==='home'?'active':''}" href="#/admin/home">首页管理</a><a class="${tab==='channels'?'active':''}" href="#/admin/channels">二级页面管理</a><a class="${tab==='products'?'active':''}" href="#/admin/products">产品图片管理</a><a class="${tab==='backup'?'active':''} sidebar-secondary" href="#/admin/backup">备份与恢复</a><a class="${tab==='password'?'active':''}" href="#/admin/password">修改密码</a></nav><main class="admin-main">${body}</main></div></div>`;document.querySelector('#admin-logout').onclick=()=>safe(async()=>{if(dirty&&!confirm('还有未保存的修改，确定退出登录？'))return;await api('/api/auth/logout',{});dirty=false;route()})}
+function adminShell(tab,body){app.innerHTML=`<div class="admin"><header class="admin-bar"><div style="display:flex;align-items:center"><a href="#/"><img src="/assets/logo.png" alt="LANDMADE"></a><strong>本地管理</strong></div><div style="display:flex;align-items:center;gap:20px"><a class="text-link" href="#/" target="_blank" rel="noopener">查看前台 ↗</a><button class="btn small" id="admin-logout">退出登录</button></div></header><div class="admin-layout"><nav class="sidebar"><a class="${tab==='home'?'active':''}" href="#/admin/home">首页管理</a><a class="${tab==='channels'?'active':''}" href="#/admin/channels">二级页面管理</a><a class="${tab==='products'?'active':''}" href="#/admin/products">产品图片管理</a><a class="${tab==='backup'?'active':''} sidebar-secondary" href="#/admin/backup">备份与恢复</a><a class="${tab==='internal'?'active':''}" href="#/admin/internal">内部浏览设置</a><a class="${tab==='password'?'active':''}" href="#/admin/password">修改密码</a></nav><main class="admin-main">${body}</main></div></div>`;document.querySelector('#admin-logout').onclick=()=>safe(async()=>{if(dirty&&!confirm('还有未保存的修改，确定退出登录？'))return;await api('/api/auth/logout',{});dirty=false;route()})}
 function adminProducts(){adminShell('products',`<div class="admin-title"><div><h1>产品图片管理</h1><p class="muted">每个产品一组素材：名称 → 频道与标签 → 图片／视频 → 保存。</p></div><a class="btn primary" href="#/admin/edit/new">＋ 上传新产品</a></div><div class="toolbar"><input class="control" id="product-query" placeholder="搜索产品名称"><select class="control" id="product-cat" style="width:160px"><option value="">所有分类</option>${state.categories.map(c=>opt(c.id,c.zh,'')).join('')}</select><select class="control" id="product-status" style="width:130px"><option value="">全部状态</option><option value="live">已上架</option><option value="draft">已下架</option></select></div><div id="admin-list"></div>`);
  const render=()=>{const q=document.querySelector('#product-query').value.toLowerCase(),cat=document.querySelector('#product-cat').value,status=document.querySelector('#product-status').value;const list=[...state.products].sort((a,b)=>b.created-a.created).filter(p=>(p.en+' '+p.zh).toLowerCase().includes(q)&&(!cat||inCategory(p,cat))&&(!status||(status==='live')===p.published));document.querySelector('#admin-list').innerHTML=list.length?`<table class="admin-table"><thead><tr><th>产品 / ${list.length}</th><th>分类</th><th>状态</th><th>操作</th></tr></thead><tbody>${list.map(p=>`<tr><td><a class="product-cell" href="#/admin/edit/${E(p.id)}">${media(image(p),`alt=""`)}<span>${E(p.zh||p.en)}<small>${E(p.en)} · ${p.images.length} 个素材${p.demo?' · 示例':''}</small></span></a></td><td>${E(productCategories(p).map(id=>catBy(id)?.zh).join(" / "))}</td><td><span class="status ${p.published?'live':''}">${p.published?'已上架':'已下架'}</span></td><td><div class="row-actions"><a class="btn small" href="#/admin/edit/${E(p.id)}">编辑</a><button class="btn small" data-publish="${E(p.id)}">${p.published?'下架':'上架'}</button><button class="btn small danger" data-delete="${E(p.id)}">删除</button></div></td></tr>`).join('')}</tbody></table>`:empty('没有符合条件的产品');document.querySelectorAll('[data-publish]').forEach(b=>b.onclick=()=>safe(async()=>{const next=clone(state),p=next.products.find(p=>p.id===b.dataset.publish);p.published=!p.published;if(p.published)p.created=Date.now();await save(next);render();notice(p.published?'产品已上架':'产品已下架')}));document.querySelectorAll('[data-delete]').forEach(b=>b.onclick=()=>safe(async()=>{const p=productBy(b.dataset.delete);if(!confirm(`删除「${p.zh||p.en}」及其组图？\n建议先下载备份。此操作会从展示中移除产品。`))return;const next=clone(state);next.products=next.products.filter(x=>x.id!==p.id);next.settings.slides=next.settings.slides.filter(s=>s.product!==p.id);next.categories.forEach(c=>{if(c.heroProduct===p.id){c.heroProduct='';c.hero=''}});await save(next);render();notice('产品已删除')}))};render();document.querySelectorAll('#product-query,#product-cat,#product-status').forEach(el=>el.addEventListener(el.tagName==='INPUT'?'input':'change',render))}
 async function safe(fn){try{await fn()}catch(e){notice(e.message);console.error(e)}}
@@ -219,14 +230,223 @@ async function adminPassword(){
  const form=document.querySelector('#password-change-form');form.oninput=()=>dirty=true;form.onsubmit=async e=>{e.preventDefault();const button=form.querySelector('button'),error=document.querySelector('#password-error');error.textContent='';if(form.elements.newPassword.value!==form.elements.confirmPassword.value){error.textContent='两次输入的新密码不一致';return}button.disabled=true;try{await api('/api/auth/password/change',{newPassword:form.elements.newPassword.value,confirmPassword:form.elements.confirmPassword.value});form.reset();dirty=false;state=null;notice('密码已修改，请使用新密码重新登录');location.hash='/admin/home'}catch(err){error.textContent=err.message;if(err.status===403){form.reset();dirty=false;await adminPassword()}}finally{if(button.isConnected)button.disabled=false}};
 }
 
+function internalAccessChanged(action){
+ try{localStorage.setItem('landmade-internal-update',action+':'+Date.now()+'-'+Math.random())}catch{}
+}
+
+function showInternal(){
+ document.title='内部浏览 · LANDMADE';
+ app.innerHTML=nav('__internal')+`<main class="login-page internal-login">
+  <section class="login-panel" aria-labelledby="internal-heading">
+   <div class="login-eyebrow">INTERNAL ACCESS</div>
+   <h1 id="internal-heading">内部浏览</h1>
+   <p class="muted">输入内部浏览密码，查看完整作品。</p>
+   <form id="internal-login-form">
+    <label class="field">内部浏览密码<input name="password" type="password" autocomplete="current-password" maxlength="128" required></label>
+    <p class="login-error" role="alert"></p>
+    <button class="btn primary" type="submit">解锁浏览 →</button>
+   </form>
+   <a class="login-home" href="#/">← 返回公开首页</a>
+  </section></main>`;
+ const form=document.querySelector('#internal-login-form');
+ const input=form.elements.password;
+ const button=form.querySelector('button');
+ const error=form.querySelector('.login-error');
+ form.onsubmit=async event=>{
+  event.preventDefault();
+  button.disabled=true;
+  error.textContent='';
+  try{
+   await api('/api/auth/internal/login',{password:input.value});
+   form.reset();
+   internalAccessChanged('unlock');
+   if(form.isConnected)await route(true);
+   else refreshPublicCatalog();
+  }catch(err){
+   error.textContent=err.message;
+   if(form.isConnected)input.select();
+  }finally{button.disabled=false}
+ };
+ input.focus({preventScroll:true});
+}
+
+async function adminInternal(ver){
+ const preference=await api('/api/auth/internal/settings');
+ if(ver!==routeVersion)return;
+ const configured=preference.configured;
+ adminShell('internal',`<div class="admin-title"><div><h1>内部浏览设置</h1>
+  <p class="muted">访客可浏览设为前台展示的「制作中」和「已上架」作品。输入内部浏览密码后，可查看完整的前台作品。</p></div>
+  <a class="btn" href="#/internal">查看内部入口 ↗</a></div>
+  <section class="panel password-panel">
+   <h2>${configured?'内部浏览密码':'设置内部浏览密码'}</h2>
+   ${configured?`<div id="internal-password-summary">
+    <p class="muted">密码已设置</p>
+    <button class="btn primary" id="internal-password-edit" type="button" aria-controls="internal-settings-form">修改密码</button>
+   </div>`:''}
+   <form id="internal-settings-form" ${configured?'hidden':''}>
+    <label class="field">${configured?'新的内部浏览密码':'内部浏览密码'}<input name="newPassword" type="password" autocomplete="new-password" minlength="6" maxlength="128" required></label>
+    <label class="field">${configured?'再次输入新密码':'再次输入密码'}<input name="confirmPassword" type="password" autocomplete="new-password" minlength="6" maxlength="128" required></label>
+    <p class="muted">请使用 6–128 个字符，与后台管理密码分开设置。${configured?'修改后，已解锁的浏览器需要重新输入密码。':''}</p>
+    <p class="login-error" role="alert"></p>
+    <div class="row-actions">
+     <button class="btn primary" type="submit">${configured?'保存修改':'保存内部浏览密码'}</button>
+     ${configured?'<button class="btn" id="internal-password-cancel" type="button">取消</button>':''}
+    </div>
+   </form>
+  </section>`);
+ const form=document.querySelector('#internal-settings-form');
+ const button=form.querySelector('button[type="submit"]');
+ const error=form.querySelector('.login-error');
+ const edit=document.querySelector('#internal-password-edit');
+ const cancel=document.querySelector('#internal-password-cancel');
+ if(configured){
+  const summary=document.querySelector('#internal-password-summary');
+  edit.onclick=()=>{
+   summary.hidden=true;
+   form.hidden=false;
+   form.elements.newPassword.focus();
+  };
+  cancel.onclick=()=>{
+   form.reset();
+   error.textContent='';
+   dirty=false;
+   form.hidden=true;
+   summary.hidden=false;
+   edit.focus();
+  };
+ }
+ form.oninput=()=>dirty=true;
+ form.onsubmit=async event=>{
+  event.preventDefault();
+  error.textContent='';
+  const newPassword=form.elements.newPassword.value;
+  const confirmPassword=form.elements.confirmPassword.value;
+  if(newPassword!==confirmPassword){error.textContent='两次输入的密码不一致';return}
+  button.disabled=true;
+  if(cancel)cancel.disabled=true;
+  try{
+   await api('/api/auth/internal/settings',{newPassword,confirmPassword});
+   internalAccessChanged('lock');
+   if(!form.isConnected)return;
+   form.reset();
+   dirty=false;
+   notice(configured?'内部浏览密码已修改':'内部浏览密码已设置');
+   await adminInternal(ver);
+   if(ver===routeVersion)document.querySelector('#internal-password-edit')?.focus();
+  }catch(err){error.textContent=err.message}
+  finally{
+   button.disabled=false;
+   if(cancel)cancel.disabled=false;
+  }
+ };
+}
+
 function showLogin(){
  app.innerHTML=`<main class="login-page"><section class="login-panel"><a href="#/" aria-label="返回首页"><img src="/assets/logo.png" alt="蓝箭造办 LANDMADE"></a><div class="login-eyebrow">ADMIN ACCESS</div><h1>管理后台</h1><p class="muted">请输入管理密码进入。</p><form id="login-form"><label class="field">管理密码<input id="admin-password" name="password" type="password" autocomplete="current-password" required autofocus></label><p class="login-error" id="login-error" role="alert"></p><button class="btn primary" id="login-submit" type="submit">进入后台 →</button></form><a class="login-home" href="#/">← 返回产品展示</a></section></main>`;
  document.querySelector('#login-form').onsubmit=async e=>{e.preventDefault();const button=document.querySelector('#login-submit'),error=document.querySelector('#login-error');button.disabled=true;error.textContent='';try{await api('/api/auth/login',{password:document.querySelector('#admin-password').value});notice('登录成功');route()}catch(err){error.textContent=err.message;document.querySelector('#admin-password').select()}finally{if(button.isConnected)button.disabled=false}};
  document.querySelector('#admin-password').focus();
 }
 let lastHash=location.hash||'#/';
-async function route(force=false){if(viewer.open)viewer.close();let hash=location.hash||'#/';if(hash==='#collection')hash='#/';if(uploading&&hash!==lastHash){history.replaceState(null,'',lastHash);notice('素材正在上传，请等待完成后再离开');return}if(dirty&&hash!==lastHash&&!confirm('还有未保存的修改，确定离开？')){history.replaceState(null,'',lastHash);return}dirty=false;heroCleanup?.();heroCleanup=null;clearInterval(heroTimer);document.querySelectorAll('video').forEach(video=>{video.pause();video.removeAttribute('src');video.querySelectorAll('source').forEach(source=>source.removeAttribute('src'));video.load()});lastHash=hash;const ver=++routeVersion;try{const parts=hash.slice(1).split('/').filter(Boolean).map(decodeURIComponent);const admin=parts[0]==='admin';if(admin){const session=await api('/api/auth/session');if(ver!==routeVersion)return;if(!session.authenticated){document.title='后台登录 · LANDMADE';showLogin();window.scrollTo({top:0,left:0,behavior:'auto'});return}}if(force||admin||!state||stateIsAdmin){const catalog=await api('/api/state'+(admin?'?admin=1':''));if(ver!==routeVersion)return;state=catalog;stateIsAdmin=admin;}document.title='LANDMADE · 蓝箭造办';if(!parts.length)showHome();else if(parts[0]==='category')showCategory(parts[1]);else if(parts[0]==='product')showProduct(parts[1]);else if(parts[0]==='admin'){document.title='后台管理 · LANDMADE';if(parts[1]==='edit')adminEdit(parts[2]);else if(parts[1]==='settings'||parts[1]==='home')adminHome();else if(parts[1]==='channels')adminChannels();else if(parts[1]==='backup')adminBackup();else if(parts[1]==='password')await adminPassword();else adminProducts()}else notFound();window.scrollTo({top:0,left:0,behavior:'auto'})}catch(e){app.innerHTML=`<main class="error">${E(e.message)}<p>请保持「启动网站」窗口运行，然后刷新页面。</p><button class="btn" onclick="location.reload()">重新加载</button></main>`}}
+function stopPageMedia(){
+ heroCleanup?.();
+ heroCleanup=null;
+ clearTimeout(heroTimer);
+ document.querySelectorAll('video').forEach(video=>{
+  video.pause();
+  video.removeAttribute('src');
+  video.querySelectorAll('source').forEach(source=>source.removeAttribute('src'));
+  video.load();
+ });
+ if(viewer.open)viewer.close();
+ viewer.replaceChildren();
+ viewProduct=null;
+}
+function clearInternalView(){
+ if(!internalUnlocked())return;
+ stopPageMedia();
+ state=null;
+ app.replaceChildren();
+}
+async function exitInternalBrowse(button){
+ button.disabled=true;
+ try{
+  await api('/api/auth/internal/logout',{});
+  internalAccessChanged('lock');
+  if(location.hash.startsWith('#/admin'))return;
+  clearInternalView();
+  history.replaceState(null,'','#/');
+  await route(true);
+ }catch(err){notice(err.message)}
+ finally{button.disabled=false}
+}
+async function route(force=false){
+ let hash=location.hash||'#/';
+ if(hash==='#collection')hash='#/';
+ if(uploading&&hash!==lastHash){
+  history.replaceState(null,'',lastHash);
+  notice('素材正在上传，请等待完成后再离开');
+  return;
+ }
+ if(dirty&&hash!==lastHash&&!confirm('还有未保存的修改，确定离开？')){
+  history.replaceState(null,'',lastHash);
+  return;
+ }
+ dirty=false;
+ stopPageMedia();
+ lastHash=hash;
+ const ver=++routeVersion;
+ try{
+  const parts=hash.slice(1).split('/').filter(Boolean).map(decodeURIComponent);
+  const admin=parts[0]==='admin';
+  if(admin){
+   const session=await api('/api/auth/session');
+   if(ver!==routeVersion)return;
+   if(!session.authenticated){
+    document.title='后台登录 · LANDMADE';
+    showLogin();
+    window.scrollTo({top:0,left:0,behavior:'auto'});
+    return;
+   }
+  }
+  if(force||admin||!state||stateIsAdmin){
+   const catalog=await api('/api/state'+(admin?'?admin=1':''));
+   if(ver!==routeVersion)return;
+   state=catalog;
+   stateIsAdmin=admin;
+  }
+  document.title='LANDMADE · 蓝箭造办';
+  if(!parts.length)showHome();
+  else if(parts[0]==='category')showCategory(parts[1]);
+  else if(parts[0]==='product')showProduct(parts[1]);
+  else if(parts[0]==='internal'){
+   if(internalUnlocked()){
+    history.replaceState(null,'','#/');
+    lastHash='#/';
+    showHome();
+   }else showInternal();
+  }
+  else if(admin){
+   document.title='后台管理 · LANDMADE';
+   if(parts[1]==='edit')adminEdit(parts[2]);
+   else if(parts[1]==='settings'||parts[1]==='home')adminHome();
+   else if(parts[1]==='channels')adminChannels();
+   else if(parts[1]==='backup')adminBackup();
+   else if(parts[1]==='internal')await adminInternal(ver);
+   else if(parts[1]==='password')await adminPassword();
+   else adminProducts();
+  }else notFound();
+  if(ver===routeVersion)window.scrollTo({top:0,left:0,behavior:'auto'});
+ }catch(e){
+  if(ver!==routeVersion)return;
+  app.innerHTML=`<main class="error">${E(e.message)}<p>请刷新页面后重试。</p><button class="btn" onclick="location.reload()">重新加载</button></main>`;
+ }
+}
 document.addEventListener('click',event=>{
+ const exit=event.target.closest('[data-internal-exit]');
+ if(exit&&!event.defaultPrevented&&!exit.disabled){
+  exitInternalBrowse(exit);
+  return;
+ }
  const link=event.target.closest('a[href]');
  if(!link||event.defaultPrevented||event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey||link.hasAttribute('download')||(link.target&&link.target!=='_self'))return;
  const url=new URL(link.href,location.href);
@@ -238,8 +458,37 @@ window.addEventListener('hashchange',()=>route());window.addEventListener('befor
 
 // Synchronize idle admin and public tabs, including other devices on the LAN.
 let checkingCatalog=false;
-async function refreshPublicCatalog(){if(checkingCatalog||document.hidden||dirty||uploading||viewer.open||!state||document.querySelector('#login-form,#password-verify-form,#password-change-form')||document.activeElement?.matches('input,textarea,select'))return;checkingCatalog=true;const hash=location.hash;try{const admin=hash.startsWith('#/admin'),current=await api('/api/revision'+(admin?'?admin=1':''));if((current.revision!==state._revision||(current.mediaRevision||'')!==(state._mediaRevision||''))&&location.hash===hash&&!dirty&&!uploading){const y=window.scrollY;await route(true);if(location.hash===hash)window.scrollTo({top:y,left:0,behavior:'auto'})}}catch(err){if(err.status===401&&location.hash.startsWith('#/admin')&&!dirty&&!uploading)await route()}finally{checkingCatalog=false}}
-window.addEventListener('storage',e=>{if(e.key==='landmade-catalog-update')refreshPublicCatalog()});
+async function refreshPublicCatalog(){
+ if(checkingCatalog||document.hidden||dirty||uploading||!state)return;
+ const form=document.querySelector('#login-form,#internal-login-form,#internal-settings-form,#password-verify-form,#password-change-form');
+ if(form||document.activeElement?.matches('input,textarea,select')||(viewer.open&&!internalUnlocked()))return;
+ checkingCatalog=true;
+ const hash=location.hash;
+ const catalog=state;
+ const ver=routeVersion;
+ try{
+  const admin=hash.startsWith('#/admin');
+  const current=await api('/api/revision'+(admin?'?admin=1':''));
+  if(ver!==routeVersion||catalog!==state||location.hash!==hash||dirty||uploading)return;
+  const changedAccess=!admin&&Boolean(current.internal)!==internalUnlocked();
+  const changedCatalog=current.revision!==catalog._revision||(current.mediaRevision||'')!==(catalog._mediaRevision||'');
+  if(changedAccess||(!viewer.open&&changedCatalog)){
+   const y=window.scrollY;
+   if(changedAccess&&!current.internal)clearInternalView();
+   await route(true);
+   if(location.hash===hash)window.scrollTo({top:y,left:0,behavior:'auto'});
+  }
+ }catch(err){
+  if(err.status===401&&ver===routeVersion&&location.hash.startsWith('#/admin')&&!dirty&&!uploading)await route();
+ }finally{checkingCatalog=false}
+}
+window.addEventListener('storage',event=>{
+ if(event.key==='landmade-internal-update'&&!location.hash.startsWith('#/admin')){
+  if(event.newValue?.startsWith('lock:'))clearInternalView();
+  route(true);
+ }
+ if(event.key==='landmade-catalog-update')refreshPublicCatalog();
+});
 window.addEventListener('focus',refreshPublicCatalog);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshPublicCatalog()});
 setInterval(refreshPublicCatalog,8000);
