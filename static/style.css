@@ -16,6 +16,7 @@
 .viewer-close,.viewer-prev,.viewer-next{background:none;border:0;font-size:27px;width:36px;min-height:36px;padding:0}
 .viewer-close{flex:none}
 .viewer-main{display:grid;grid-template-columns:36px minmax(0,1fr) 36px;gap:8px;align-items:center;min-height:0}
+.viewer-media{position:relative;height:100%;min-width:0;min-height:0}
 .viewer-stage{position:relative;width:100%;height:100%;overflow:hidden;overscroll-behavior:contain}
 .viewer-canvas{display:grid;place-items:center;width:100%;height:100%;min-width:0;min-height:0}
 .viewer-image{display:block;width:100%;height:100%;min-height:0;object-fit:contain}
@@ -25,9 +26,21 @@ img.viewer-image{cursor:zoom-in;user-select:none;-webkit-user-drag:none}
 .viewer-stage.is-zoomed .viewer-canvas{width:max-content;height:max-content;min-width:100%;min-height:100%}
 .viewer-stage.is-zoomed img.viewer-image{cursor:inherit;max-width:none;max-height:none}
 .viewer-bottom{min-width:0;text-align:center}
-.viewer-tools{display:flex;justify-content:center;align-items:center;gap:8px;min-width:0}
 .viewer-count{font-size:11px;color:#666}
-.viewer-zoom{flex:none;min-height:32px;padding:4px 9px;background:white;border:1px solid #ddd;font-size:11px}
+.viewer-zoom{
+ position:absolute;inset-inline-end:10px;inset-block-end:10px;z-index:1;
+ align-items:center;justify-content:center;gap:4px;min-height:25px;padding:0 7px;
+ color:#252320;background:rgba(255,255,255,.86);border:1px solid rgba(79,62,47,.25);
+ border-radius:999px;box-shadow:0 2px 8px rgba(50,37,25,.13);
+ -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+ font-size:11px;font-weight:500;line-height:1.2;white-space:nowrap;touch-action:manipulation;
+ transition:background-color .18s ease;
+}
+.viewer-zoom:not([hidden]){display:inline-flex}
+.viewer-zoom:hover,.viewer-zoom:focus-visible{background-color:rgba(255,255,255,.96)}
+.viewer-zoom svg{width:11px;height:11px;flex:none}
+.viewer-zoom[aria-pressed="false"] .viewer-icon-fit,.viewer-zoom[aria-pressed="true"] .viewer-icon-enlarge{display:none}
+@media(pointer:coarse){.viewer-zoom::after{content:"";position:absolute;inset:-9px -4px}}
 .viewer-thumbs{position:relative;display:flex;gap:6px;overflow-x:auto;max-height:66px;margin:6px 0 3px;padding:2px}
 .viewer-thumbs button{width:68px;height:49px;border:0;border-bottom:1px solid transparent;background:#f4f3f0;padding:0;flex:none}
 .viewer-thumbs button:first-child{margin-inline-start:auto}

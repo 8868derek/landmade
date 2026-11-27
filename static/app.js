@@ -158,14 +158,20 @@ function drawViewer(){
   </div>
   <div class="viewer-main">
    <button type="button" class="viewer-prev" aria-label="上一张">‹</button>
-   <div class="viewer-stage"><div class="viewer-canvas">${media(source,`class="viewer-image" alt="${E(p.zh)}" draggable="false"`,'play')}</div></div>
+   <div class="viewer-media">
+    <div class="viewer-stage"><div class="viewer-canvas">${media(source,`class="viewer-image" alt="${E(p.zh)}" draggable="false"`,'play')}</div></div>
+    <button type="button" class="viewer-zoom" aria-pressed="false"${video?' hidden':''}>
+     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path class="viewer-icon-enlarge" d="M6 2H2v4m8-4h4v4m0 4v4h-4m-4 0H2v-4"/>
+      <path class="viewer-icon-fit" d="M2 6h4V2m8 4h-4V2m4 8h-4v4m-8-4h4v4"/>
+     </svg>
+     <span class="viewer-zoom-label">放大 200%</span>
+    </button>
+   </div>
    <button type="button" class="viewer-next" aria-label="下一张">›</button>
   </div>
   <div class="viewer-bottom">
-   <div class="viewer-tools">
-    <div class="viewer-count">${String(viewIndex+1).padStart(2,'0')} — ${E(p.mediaNames?.[source]||p.zh||p.en)} ${stageBadge(p,source)}</div>
-    <button type="button" class="viewer-zoom" aria-pressed="false"${video?' hidden':''}>放大 200%</button>
-   </div>
+   <div class="viewer-count">${String(viewIndex+1).padStart(2,'0')} — ${E(p.mediaNames?.[source]||p.zh||p.en)} ${stageBadge(p,source)}</div>
    <div class="viewer-thumbs">${p.images.map((s,i)=>`<button type="button" class="${i===viewIndex?'active':''}" data-thumb="${i}" aria-label="第 ${i+1} 张"${i===viewIndex?' aria-current="true"':''}>${media(s,'alt=""','thumb')}</button>`).join('')}</div>
    <div class="viewer-hint">${video?'← → 切换 · Esc 关闭':'点击图片可放大 · ← → 切换 · Esc 关闭'}</div>
   </div>`;
@@ -188,29 +194,39 @@ function configureViewerZoom(source){
  const stage=viewer.querySelector('.viewer-stage');
  const image=stage.querySelector('img');
  const zoom=viewer.querySelector('.viewer-zoom');
+ const label=zoom.querySelector('.viewer-zoom-label');
  const hint=viewer.querySelector('.viewer-hint');
  const previewSrc=image.getAttribute('src'),previewSet=image.getAttribute('srcset');
  const zoomed=()=>stage.classList.contains('is-zoomed');
  let drag=null;
- function resize(center=false){
-  if(!zoomed()||!image.naturalWidth||!stage.clientWidth)return;
-  const anchorX=center===true ? 0.5 : (stage.scrollLeft+stage.clientWidth/2)/stage.scrollWidth;
-  const anchorY=center===true ? 0.5 : (stage.scrollTop+stage.clientHeight/2)/stage.scrollHeight;
-  const fit=Math.min(stage.clientWidth/image.naturalWidth,stage.clientHeight/image.naturalHeight);
-  image.style.width=Math.floor(image.naturalWidth*fit*2)+'px';
-  image.style.height=Math.floor(image.naturalHeight*fit*2)+'px';
-  stage.scrollLeft=stage.scrollWidth*anchorX-stage.clientWidth/2;
-  stage.scrollTop=stage.scrollHeight*anchorY-stage.clientHeight/2;
+ function layout(center=false){
+  const {clientWidth,clientHeight}=stage;
+  if(!image.naturalWidth||!clientWidth||!clientHeight)return;
+  const fit=Math.min(clientWidth/image.naturalWidth,clientHeight/image.naturalHeight);
+  const scale=fit*(zoomed()?2:1);
+  const width=Math.floor(image.naturalWidth*scale);
+  const height=Math.floor(image.naturalHeight*scale);
+  if(zoomed()){
+   const anchorX=center===true ? 0.5 : (stage.scrollLeft+clientWidth/2)/stage.scrollWidth;
+   const anchorY=center===true ? 0.5 : (stage.scrollTop+clientHeight/2)/stage.scrollHeight;
+   image.style.width=width+'px';
+   image.style.height=height+'px';
+   stage.scrollLeft=stage.scrollWidth*anchorX-clientWidth/2;
+   stage.scrollTop=stage.scrollHeight*anchorY-clientHeight/2;
+  }
+  // Follow the visible photo edge when the image leaves space inside the stage.
+  zoom.style.insetInlineEnd=(Math.max(0,(clientWidth-width)/2)+10)+'px';
+  zoom.style.insetBlockEnd=(Math.max(0,(clientHeight-height)/2)+10)+'px';
  }
  function toggle(){
   const enlarged=!zoomed();
   if(enlarged&&!image.naturalWidth)return;
   stage.classList.toggle('is-zoomed',enlarged);
   zoom.setAttribute('aria-pressed',String(enlarged));
-  zoom.textContent=enlarged?'适应窗口':'放大 200%';
+  label.textContent=enlarged?'适应窗口':'放大 200%';
   hint.textContent=enlarged?'拖动查看细节 · 方向键移动 · Esc 关闭':'点击图片可放大 · ← → 切换 · Esc 关闭';
   if(enlarged){
-   resize(true);
+   layout(true);
    image.removeAttribute('srcset');
    image.src=source;
   }else{
@@ -218,13 +234,14 @@ function configureViewerZoom(source){
    if(previewSet)image.setAttribute('srcset',previewSet);
    image.setAttribute('src',previewSrc);
    stage.scrollLeft=stage.scrollTop=0;
+   layout();
   }
  }
  zoom.onclick=toggle;
  image.onclick=()=>{if(!zoomed())toggle()};
- image.addEventListener('load',resize);
+ image.addEventListener('load',()=>layout());
  if('ResizeObserver' in window){
-  viewerZoomObserver=new ResizeObserver(resize);
+  viewerZoomObserver=new ResizeObserver(()=>layout());
   viewerZoomObserver.observe(stage);
  }
  stage.addEventListener('pointerdown',event=>{
