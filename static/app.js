@@ -146,10 +146,135 @@ function alignDetailPhotos(){const grid=document.querySelector('.detail-photos')
 const alignProductLayouts=()=>{alignDetailPhotos();alignChannelProducts()};if(detailPhotoBreakpoint.addEventListener)detailPhotoBreakpoint.addEventListener('change',alignProductLayouts);else detailPhotoBreakpoint.addListener(alignProductLayouts);
 function showProduct(id){const p=productBy(id);if(!p||!p.published)return notFound();const c=catBy(p.category);app.innerHTML=nav(p.category)+`<main><div class="detail-intro"><div class="breadcrumb"><a href="#/">Home</a> / <a href="#/category/${E(c.id)}">${E(c.en)}</a> / ${E(p.en)}</div><div class="intro-grid"><div><h1>${E(p.en)}</h1><div class="zh">${E(p.zh)}</div></div>${p.description||p.descriptionZh?`<div class="detail-description">${E(p.description).replace(/\n/g,'<br>')}<div class="zh">${E(p.descriptionZh)}</div></div>`:''}</div></div><div class="detail-gallery"><div class="detail-photos">${p.images.map((src,i)=>`<button class="photo-btn ${isVideo(src)?'has-video':''}" data-photo="${i}" aria-label="查看第 ${i+1} 个素材">${media(src,`alt="${E(p.mediaNames?.[src]||p.zh)} · ${i+1}" loading="lazy"`)}<span class="photo-stage">${stageBadge(p,src)}</span><span class="expand">⤢</span></button>`).join('')}</div><div class="back"><a class="text-link" href="#/category/${E(c.id)}">← Back to collection <small>返回频道</small></a></div></div></main>`+footer();alignDetailPhotos();document.querySelectorAll('[data-photo]').forEach(b=>b.onclick=()=>openViewer(p,Math.max(0,Number(b.dataset.photo))))}
 function notFound(){app.innerHTML=nav()+`<main class="empty">产品暂未上架，或页面不存在。<small><a href="#/">← 返回首页</a></small></main>`+footer()}
-function openViewer(p,i){returnFocus=document.activeElement;viewProduct=p;viewIndex=i;drawViewer();viewer.showModal();document.body.style.overflow='hidden'}
-function drawViewer(){const p=viewProduct;viewer.innerHTML=`<div class="viewer-top">${E(p.en)}<small>${E(p.zh)}</small><small>${String(viewIndex+1).padStart(2,'0')} / ${String(p.images.length).padStart(2,'0')}</small></div><button class="viewer-close" aria-label="关闭大图">×</button>${media(p.images[viewIndex],`class="viewer-image"  alt="${E(p.zh)}"`,'play')}<button class="viewer-prev" aria-label="上一张">‹</button><button class="viewer-next" aria-label="下一张">›</button><button class="viewer-zoom">放大 +</button><div class="viewer-bottom"><div class="viewer-count">${String(viewIndex+1).padStart(2,'0')} — ${E(p.mediaNames?.[p.images[viewIndex]]||p.zh||p.en)} ${stageBadge(p,p.images[viewIndex])}</div><div class="viewer-thumbs">${p.images.map((s,i)=>`<button class="${i===viewIndex?'active':''}" data-thumb="${i}" aria-label="第 ${i+1} 张">${media(s,`alt=""`,'thumb')}</button>`).join('')}</div><div class="viewer-hint">← → Browse　　Esc Close</div></div>`;viewer.querySelector('.viewer-close').onclick=()=>viewer.close();viewer.querySelector('.viewer-prev').onclick=()=>moveViewer(-1);viewer.querySelector('.viewer-next').onclick=()=>moveViewer(1);viewer.querySelectorAll('[data-thumb]').forEach(b=>b.onclick=()=>{viewIndex=Number(b.dataset.thumb);drawViewer()});viewer.querySelector('.viewer-zoom').onclick=()=>{const im=viewer.querySelector('.viewer-image');im.classList.toggle('zoomed');if(im.tagName==='IMG'){im.removeAttribute('srcset');im.src=im.classList.contains('zoomed')?p.images[viewIndex]:displayImage(p.images[viewIndex])}viewer.querySelector('.viewer-zoom').textContent=im.classList.contains('zoomed')?'适应窗口 −':'放大 +'};if(isVideo(p.images[viewIndex])){viewer.querySelector('.viewer-zoom').hidden=true}else viewer.querySelector('.viewer-image').onclick=()=>viewer.querySelector('.viewer-zoom').click();viewer.querySelector('.viewer-thumbs .active')?.scrollIntoView({block:'nearest',inline:'center'})}
-function moveViewer(n){viewIndex=(viewIndex+n+viewProduct.images.length)%viewProduct.images.length;drawViewer()}
-viewer.addEventListener('close',()=>{viewer.querySelector('video')?.pause();document.body.style.overflow='';returnFocus?.focus()});viewer.addEventListener('keydown',e=>{if(e.target.tagName==='VIDEO')return;if(e.key==='ArrowRight'){e.preventDefault();moveViewer(1)}if(e.key==='ArrowLeft'){e.preventDefault();moveViewer(-1)}});
+function openViewer(p,i){returnFocus=document.activeElement;viewProduct=p;viewIndex=i;drawViewer();viewer.showModal();centerViewerThumb();document.body.style.overflow='hidden'}
+function drawViewer(){
+ releaseViewerZoom();
+ const p=viewProduct,source=p.images[viewIndex],video=isVideo(source);
+ viewer.querySelector('.viewer-stage video')?.pause();
+ viewer.innerHTML=`
+  <div class="viewer-header">
+   <div class="viewer-top">${E(p.en)}<small>${E(p.zh)}</small><small>${String(viewIndex+1).padStart(2,'0')} / ${String(p.images.length).padStart(2,'0')}</small></div>
+   <button type="button" class="viewer-close" aria-label="关闭大图">×</button>
+  </div>
+  <div class="viewer-main">
+   <button type="button" class="viewer-prev" aria-label="上一张">‹</button>
+   <div class="viewer-stage"><div class="viewer-canvas">${media(source,`class="viewer-image" alt="${E(p.zh)}" draggable="false"`,'play')}</div></div>
+   <button type="button" class="viewer-next" aria-label="下一张">›</button>
+  </div>
+  <div class="viewer-bottom">
+   <div class="viewer-tools">
+    <div class="viewer-count">${String(viewIndex+1).padStart(2,'0')} — ${E(p.mediaNames?.[source]||p.zh||p.en)} ${stageBadge(p,source)}</div>
+    <button type="button" class="viewer-zoom" aria-pressed="false"${video?' hidden':''}>放大 200%</button>
+   </div>
+   <div class="viewer-thumbs">${p.images.map((s,i)=>`<button type="button" class="${i===viewIndex?'active':''}" data-thumb="${i}" aria-label="第 ${i+1} 张"${i===viewIndex?' aria-current="true"':''}>${media(s,'alt=""','thumb')}</button>`).join('')}</div>
+   <div class="viewer-hint">${video?'← → 切换 · Esc 关闭':'点击图片可放大 · ← → 切换 · Esc 关闭'}</div>
+  </div>`;
+ viewer.querySelector('.viewer-close').onclick=()=>viewer.close();
+ viewer.querySelector('.viewer-prev').onclick=()=>{moveViewer(-1);viewer.querySelector('.viewer-prev').focus()};
+ viewer.querySelector('.viewer-next').onclick=()=>{moveViewer(1);viewer.querySelector('.viewer-next').focus()};
+ viewer.querySelectorAll('[data-thumb]').forEach(button=>button.onclick=()=>{
+  viewIndex=Number(button.dataset.thumb);
+  drawViewer();
+  viewer.querySelector('.viewer-thumbs .active').focus({preventScroll:true});
+ });
+ centerViewerThumb();
+ if(!video)configureViewerZoom(source);
+}
+function centerViewerThumb(){
+ const thumbs=viewer.querySelector('.viewer-thumbs'),active=thumbs.querySelector('.active');
+ if(active)thumbs.scrollLeft=active.offsetLeft-(thumbs.clientWidth-active.offsetWidth)/2;
+}
+function configureViewerZoom(source){
+ const stage=viewer.querySelector('.viewer-stage');
+ const image=stage.querySelector('img');
+ const zoom=viewer.querySelector('.viewer-zoom');
+ const hint=viewer.querySelector('.viewer-hint');
+ const previewSrc=image.getAttribute('src'),previewSet=image.getAttribute('srcset');
+ const zoomed=()=>stage.classList.contains('is-zoomed');
+ let drag=null;
+ function resize(center=false){
+  if(!zoomed()||!image.naturalWidth||!stage.clientWidth)return;
+  const anchorX=center===true ? 0.5 : (stage.scrollLeft+stage.clientWidth/2)/stage.scrollWidth;
+  const anchorY=center===true ? 0.5 : (stage.scrollTop+stage.clientHeight/2)/stage.scrollHeight;
+  const fit=Math.min(stage.clientWidth/image.naturalWidth,stage.clientHeight/image.naturalHeight);
+  image.style.width=Math.floor(image.naturalWidth*fit*2)+'px';
+  image.style.height=Math.floor(image.naturalHeight*fit*2)+'px';
+  stage.scrollLeft=stage.scrollWidth*anchorX-stage.clientWidth/2;
+  stage.scrollTop=stage.scrollHeight*anchorY-stage.clientHeight/2;
+ }
+ function toggle(){
+  const enlarged=!zoomed();
+  if(enlarged&&!image.naturalWidth)return;
+  stage.classList.toggle('is-zoomed',enlarged);
+  zoom.setAttribute('aria-pressed',String(enlarged));
+  zoom.textContent=enlarged?'适应窗口':'放大 200%';
+  hint.textContent=enlarged?'拖动查看细节 · 方向键移动 · Esc 关闭':'点击图片可放大 · ← → 切换 · Esc 关闭';
+  if(enlarged){
+   resize(true);
+   image.removeAttribute('srcset');
+   image.src=source;
+  }else{
+   image.removeAttribute('style');
+   if(previewSet)image.setAttribute('srcset',previewSet);
+   image.setAttribute('src',previewSrc);
+   stage.scrollLeft=stage.scrollTop=0;
+  }
+ }
+ zoom.onclick=toggle;
+ image.onclick=()=>{if(!zoomed())toggle()};
+ image.addEventListener('load',resize);
+ if('ResizeObserver' in window){
+  viewerZoomObserver=new ResizeObserver(resize);
+  viewerZoomObserver.observe(stage);
+ }
+ stage.addEventListener('pointerdown',event=>{
+  if(!zoomed()||event.button!==0)return;
+  drag={id:event.pointerId,x:event.clientX+stage.scrollLeft,y:event.clientY+stage.scrollTop};
+  stage.setPointerCapture(event.pointerId);
+  stage.classList.add('is-dragging');
+ });
+ stage.addEventListener('pointermove',event=>{
+  if(drag?.id!==event.pointerId)return;
+  stage.scrollLeft=drag.x-event.clientX;
+  stage.scrollTop=drag.y-event.clientY;
+ });
+ stage.addEventListener('lostpointercapture',()=>{
+  drag=null;
+  stage.classList.remove('is-dragging');
+ });
+}
+function moveViewer(n){
+ viewIndex=(viewIndex+n+viewProduct.images.length)%viewProduct.images.length;
+ drawViewer();
+}
+let viewerZoomObserver;
+function releaseViewerZoom(){
+ viewerZoomObserver?.disconnect();
+ viewerZoomObserver=null;
+}
+viewer.addEventListener('close',()=>{
+ releaseViewerZoom();
+ viewer.querySelector('.viewer-stage video')?.pause();
+ document.body.style.overflow='';
+ returnFocus?.focus();
+});
+viewer.addEventListener('keydown',event=>{
+ if(event.target.tagName==='VIDEO')return;
+ const directions={ArrowRight:[1,0],ArrowLeft:[-1,0],ArrowDown:[0,1],ArrowUp:[0,-1]};
+ const direction=directions[event.key];
+ if(!direction)return;
+ const [x,y]=direction;
+ const zoomedStage=viewer.querySelector('.viewer-stage.is-zoomed');
+ if(zoomedStage){
+  event.preventDefault();
+  zoomedStage.scrollLeft+=x*72;
+  zoomedStage.scrollTop+=y*72;
+ }else if(x){
+  event.preventDefault();
+  moveViewer(x);
+  viewer.querySelector('.viewer-thumbs .active')?.focus({preventScroll:true});
+ }
+});
 function adminShell(tab,body){app.innerHTML=`<div class="admin"><header class="admin-bar"><div style="display:flex;align-items:center"><a href="#/"><img src="/assets/logo.png" alt="LANDMADE"></a><strong>本地管理</strong></div><div style="display:flex;align-items:center;gap:20px"><a class="text-link" href="#/" target="_blank" rel="noopener">查看前台 ↗</a><button class="btn small" id="admin-logout">退出登录</button></div></header><div class="admin-layout"><nav class="sidebar"><a class="${tab==='home'?'active':''}" href="#/admin/home">首页管理</a><a class="${tab==='channels'?'active':''}" href="#/admin/channels">二级页面管理</a><a class="${tab==='products'?'active':''}" href="#/admin/products">产品图片管理</a><a class="${tab==='backup'?'active':''} sidebar-secondary" href="#/admin/backup">备份与恢复</a><a class="${tab==='internal'?'active':''}" href="#/admin/internal">内部浏览设置</a><a class="${tab==='password'?'active':''}" href="#/admin/password">修改密码</a></nav><main class="admin-main">${body}</main></div></div>`;document.querySelector('#admin-logout').onclick=()=>safe(async()=>{if(dirty&&!confirm('还有未保存的修改，确定退出登录？'))return;await api('/api/auth/logout',{});dirty=false;route()})}
 function adminProducts(){adminShell('products',`<div class="admin-title"><div><h1>产品图片管理</h1><p class="muted">每个产品一组素材：名称 → 频道与标签 → 图片／视频 → 保存。</p></div><a class="btn primary" href="#/admin/edit/new">＋ 上传新产品</a></div><div class="toolbar"><input class="control" id="product-query" placeholder="搜索产品名称"><select class="control" id="product-cat" style="width:160px"><option value="">所有分类</option>${state.categories.map(c=>opt(c.id,c.zh,'')).join('')}</select><select class="control" id="product-status" style="width:130px"><option value="">全部状态</option><option value="live">已上架</option><option value="draft">已下架</option></select></div><div id="admin-list"></div>`);
  const render=()=>{const q=document.querySelector('#product-query').value.toLowerCase(),cat=document.querySelector('#product-cat').value,status=document.querySelector('#product-status').value;const list=[...state.products].sort((a,b)=>b.created-a.created).filter(p=>(p.en+' '+p.zh).toLowerCase().includes(q)&&(!cat||inCategory(p,cat))&&(!status||(status==='live')===p.published));document.querySelector('#admin-list').innerHTML=list.length?`<table class="admin-table"><thead><tr><th>产品 / ${list.length}</th><th>分类</th><th>状态</th><th>操作</th></tr></thead><tbody>${list.map(p=>`<tr><td><a class="product-cell" href="#/admin/edit/${E(p.id)}">${media(image(p),`alt=""`)}<span>${E(p.zh||p.en)}<small>${E(p.en)} · ${p.images.length} 个素材${p.demo?' · 示例':''}</small></span></a></td><td>${E(productCategories(p).map(id=>catBy(id)?.zh).join(" / "))}</td><td><span class="status ${p.published?'live':''}">${p.published?'已上架':'已下架'}</span></td><td><div class="row-actions"><a class="btn small" href="#/admin/edit/${E(p.id)}">编辑</a><button class="btn small" data-publish="${E(p.id)}">${p.published?'下架':'上架'}</button><button class="btn small danger" data-delete="${E(p.id)}">删除</button></div></td></tr>`).join('')}</tbody></table>`:empty('没有符合条件的产品');document.querySelectorAll('[data-publish]').forEach(b=>b.onclick=()=>safe(async()=>{const next=clone(state),p=next.products.find(p=>p.id===b.dataset.publish);p.published=!p.published;if(p.published)p.created=Date.now();await save(next);render();notice(p.published?'产品已上架':'产品已下架')}));document.querySelectorAll('[data-delete]').forEach(b=>b.onclick=()=>safe(async()=>{const p=productBy(b.dataset.delete);if(!confirm(`删除「${p.zh||p.en}」及其组图？\n建议先下载备份。此操作会从展示中移除产品。`))return;const next=clone(state);next.products=next.products.filter(x=>x.id!==p.id);next.settings.slides=next.settings.slides.filter(s=>s.product!==p.id);next.categories.forEach(c=>{if(c.heroProduct===p.id){c.heroProduct='';c.hero=''}});await save(next);render();notice('产品已删除')}))};render();document.querySelectorAll('#product-query,#product-cat,#product-status').forEach(el=>el.addEventListener(el.tagName==='INPUT'?'input':'change',render))}
